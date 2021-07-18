@@ -2,6 +2,9 @@
   <div id="app">
     <p>{{$store.state.age}}</p>
     <p>{{$store.getters.getName}}</p>
+    <button @click="$store.commit('changeName','juju')">改名</button>
+    <br>
+    <button @click="$store.dispatch('addAge',3)">改年龄</button>
   </div>
 </template>
 

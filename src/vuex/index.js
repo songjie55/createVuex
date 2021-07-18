@@ -1,9 +1,11 @@
 import Vue from "vue";
-let forEach=(obj,callback)=>{
-    Object.keys(obj).forEach(key=>{
-        callback(key,obj[key])
+
+let forEach = (obj, callback) => {
+    Object.keys(obj).forEach(key => {
+        callback(key, obj[key])
     })
 }
+
 class Store {
     constructor(options) {
         //利用vue的数据响应式原理来设置响应式数据，不自己利用defineProperty设置响应式的理由是太过繁琐
@@ -12,13 +14,35 @@ class Store {
         })
         let getters = options.getters;
         this.getters = {}
-        forEach(getters,(key,value)=>{
-            Object.defineProperty(this.getters,key,{
-                get:()=>{
+        forEach(getters, (key, value) => {
+            Object.defineProperty(this.getters, key, {
+                get: () => {
                     return value(this.state)//value就是获取到的每个getter函数
                 }
             })
         })
+        //吧用户定义的Mutation放到store上
+        let mutations = options.mutations;
+        this.mutations = {};
+        forEach(mutations, (mutationName, value) => {
+            this.mutations[mutationName] = (payload) => {//这里要用箭头函数不然this错乱
+                value(this.state, payload)
+            }
+        })
+        let actions = options.actions;
+        this.actions = {};
+        forEach(actions, (actionName, value) => {
+            this.actions[actionName] = (payload) => {//这里要用箭头函数不然this错乱
+                value(this, payload)//这里的第一个参数用this store是因为action写的时候可以解构
+            }
+        })
+    }
+
+    commit = (mutationName, payload) => {//这里用箭头函数的原因是、commit是函数，函数被调用的时候里面的this指向当前调用的对象，但是在写action方法时候会用解构的方式来写，例如change({commit}),这个时候commit才会正确指向并找到
+        this.mutations[mutationName](payload)
+    }
+    dispatch = (actionName, payload) => {
+        this.actions[actionName](payload)
     }
 
     get state() {
