@@ -5,41 +5,59 @@ let forEach = (obj, callback) => {
         callback(key, obj[key])
     })
 }
+//namespaced的原理是在注册mutation和action时候添加给mutationName或actionName加上子模块的名字，生成单独的mutationName和actionName
+function installModule(store, rootState, path, rawModule) {//给各个模块安装action和mutation
+    //第一个参数是当前实例，第二个参数根组件的数据state,第三个路径，第四个父模块
 
-function installModule(store, rootState, path, rawModule) {
-    let getters=rawModule._raw.getters
-    if(getters){
-        forEach(getters,(getterName,value)=>{//设置模块的getters
-            Object.defineProperty(store.getters,getterName,{
-                get:()=>{
+    //给根模块上面安装子模块的state
+    if (path.length > 0) {//当path不为空数组就是正在安装子模块
+        let parentState = path.slice(0, -1).reduce((root, current) => {
+            return rootState[current]
+        }, rootState)
+        //vue中给不存在的值设置响应式通过set
+        Vue.set(parentState, path[path.length - 1], rawModule.state)
+    }
+    let {getters,mutations,actions} = rawModule._raw
+    if (getters) {
+        forEach(getters, (getterName, value) => {//设置模块的getters
+            Object.defineProperty(store.getters, getterName, {
+                get: () => {
                     return value(rawModule.state)//传递当前模块的state
                 }
             })
         })
     }
-    let mutations=rawModule._raw.mutations
-    if(mutations){
-        forEach(mutations,(mutationName,value)=>{
+    if (mutations) {
+        forEach(mutations, (mutationName, value) => {
             // 发布订阅,在根组件上面设置一个订阅者,commit的时候所有同名的mutation都会触发
-            let arr=store.mutations[mutationName]||(store.mutations[mutationName]=[])
-            arr.push((payload)=>{
-                value(rawModule.state,payload)
+            let arr = store.mutations[mutationName] || (store.mutations[mutationName] = [])
+            arr.push((payload) => {
+                value(rawModule.state, payload)
             })
         })
     }
-    let actions=rawModule._raw.actions
-    if(actions){
-        forEach(actions,(actionName,value)=>{
+    if (actions) {
+        forEach(actions, (actionName, value) => {
             // 发布订阅,在根组件上面设置一个订阅者,commit的时候所有同名的mutation都会触发
-            let arr=store.actions[actionName]||(store.actions[actionName]=[])
-            arr.push((payload)=>{
-                value(store,payload)
+            let arr = store.actions[actionName] || (store.actions[actionName] = [])
+            arr.push((payload) => {
+                value(store, payload)
             })
         })
     }
+    //如果有子模块递归安装action和mutation;
+    forEach(rawModule._children, (moduleName, rawModule) => {
+        installModule(store, rootState, path.concat(moduleName), rawModule)
+    })
 }
-
-class ModuleCollection {
+//重置store
+function resetStore (store) {
+    store.actions = Object.create(null)
+    store.mutations = Object.create(null)
+    store.getters = Object.create(null)
+    installModule(store, store.state, [], store.modules.root)
+}
+class ModuleCollection {//递归收集子模块并注册
     constructor(options) {
         //深度递归所有子模块
         this.register([], options)
@@ -88,18 +106,30 @@ class Store {
     }
 
     commit = (mutationName, payload) => {//这里用箭头函数的原因是、commit是函数，函数被调用的时候里面的this指向当前调用的对象，但是在写action方法时候会用解构的方式来写，例如change({commit}),这个时候commit才会正确指向并找到
-        this.mutations[mutationName].forEach(fn=>{
+        this.mutations[mutationName].forEach(fn => {
             fn(payload)
         })
     }
     dispatch = (actionName, payload) => {
-        this.actions[actionName].forEach(fn=>{
+        this.actions[actionName].forEach(fn => {
             fn(payload)
         })
     }
 
     get state() {
         return this.vm.state
+    }
+
+    //动态注册模块
+    registerModule(moduleName, module) {//第一个参数是数组
+        if (!Array.isArray(moduleName)) {
+            moduleName = [moduleName]
+        }
+        this.modules.register(moduleName, module)//注册模块格式化
+        //安装模块
+        installModule(this, this.state, moduleName, module)
+        //安装后重新重置模块，因为会有相同的getter会重复
+        resetStore(this)
     }
 }
 
